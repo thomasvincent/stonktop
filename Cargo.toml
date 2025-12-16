@@ -1,0 +1,53 @@
+[package]
+name = "stonktop"
+version = "0.1.0"
+edition = "2021"
+authors = ["Thomas Vincent"]
+description = "A top-like terminal UI for monitoring stock and cryptocurrency prices"
+license = "MIT"
+repository = "https://github.com/thomasvincent/stonktop"
+keywords = ["stocks", "cryptocurrency", "terminal", "tui", "finance"]
+categories = ["command-line-utilities", "finance"]
+readme = "README.md"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI arguments
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Configuration
+dirs = "5.0"
+toml = "0.8"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Formatting
+humantime = "2.1"
+num-format = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[[bin]]
+name = "stonktop"
+path = "src/main.rs"
