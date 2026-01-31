@@ -1,0 +1,82 @@
+[package]
+name = "stonktop"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Thomas Vincent <thomasvincent@gmail.com>"]
+description = "A top-like terminal UI for monitoring stock and cryptocurrency prices"
+documentation = "https://docs.rs/stonktop"
+homepage = "https://github.com/thomasvincent/stonktop"
+repository = "https://github.com/thomasvincent/stonktop"
+license = "MIT"
+keywords = ["stocks", "cryptocurrency", "terminal", "tui", "finance"]
+categories = ["command-line-utilities", "finance"]
+readme = "README.md"
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+]
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+# TUI
+ratatui = "0.30"
+crossterm = "0.29"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+futures = "0.3"
+urlencoding = "2"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI arguments
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Random number generation
+rand = "0.8"
+
+# Configuration
+dirs = "6.0"
+toml = "0.9"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Formatting
+humantime = "2.1"
+num-format = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+strip = false
+
+[[bin]]
+name = "stonktop"
+path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/stonktop-{ target }.tar.gz"
+bin-dir = "stonktop-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"

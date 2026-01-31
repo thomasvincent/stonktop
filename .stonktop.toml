@@ -1,0 +1,24 @@
+[general]
+refresh_interval = 5
+timeout = 10
+
+[watchlist]
+symbols = ["BTC-USD", "GLD", "SLV", "IAU"]
+
+[display]
+show_header = true
+show_fundamentals = false
+show_holdings = false
+show_separators = true
+sort_by = "change_percent"
+sort_descending = true
+
+[colors]
+gain = "green"
+loss = "red"
+neutral = "white"
+
+[groups]
+precious_metals = ["GLD", "SLV", "IAU"]
+crypto = ["BTC-USD"]
+all = ["BTC-USD", "GLD", "SLV", "IAU"]

@@ -1,0 +1,50 @@
+[general]
+refresh_interval = 5
+timeout = 10
+
+[watchlist]
+symbols = [
+    "AAPL",    # Apple
+    "MSFT",    # Microsoft
+    "GOOGL",   # Alphabet/Google
+    "AMZN",    # Amazon
+    "NVDA",    # Nvidia
+    "META",    # Meta/Facebook
+    "TSLA",    # Tesla
+    "AVGO",    # Broadcom
+    "ASML",    # ASML
+    "NFLX",    # Netflix
+    "CRM",     # Salesforce
+    "ADBE",    # Adobe
+    "INTC",    # Intel
+    "AMD",     # AMD
+    "QCOM",    # Qualcomm
+    "CSCO",    # Cisco
+    "IBM",     # IBM
+    "INTU",    # Intuit
+    "SNPS",    # Synopsys
+    "CDNS"     # Cadence Design
+]
+
+[display]
+show_header = true
+show_fundamentals = false
+show_holdings = false
+show_separators = true
+sort_by = "change_percent"
+sort_descending = true
+
+[colors]
+gain = "green"
+loss = "red"
+neutral = "white"
+
+[groups]
+mega_cap = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+semiconductors = ["NVDA", "AMD", "INTC", "QCOM", "AVGO", "ASML", "SNPS", "CDNS"]
+software_services = ["MSFT", "GOOGL", "CRM", "ADBE", "INTU", "IBM"]
+all = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+    "AVGO", "ASML", "NFLX", "CRM", "ADBE", "INTC", "AMD",
+    "QCOM", "CSCO", "IBM", "INTU", "SNPS", "CDNS"
+]
