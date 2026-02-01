@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify CLAUDE.md exists
+        run: test -f CLAUDE.md || (echo "Missing CLAUDE.md" && exit 1)
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
