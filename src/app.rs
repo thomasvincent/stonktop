@@ -2,7 +2,7 @@
 //!
 //! Where we keep track of your hopes, dreams, and unrealized losses.
 
-use crate::api::{expand_symbol, YahooFinanceClient};
+use crate::api::{YahooFinanceClient, expand_symbol};
 use crate::cli::Args;
 use crate::config::Config;
 use crate::models::{Holding, Quote, SortDirection, SortOrder};
@@ -201,7 +201,13 @@ impl App {
             client,
             last_refresh: None,
             last_refresh_attempt: None,
-            refresh_interval: Duration::from_secs_f64(args.delay),
+            refresh_interval: Duration::from_secs_f64(
+                if !args.delay.is_finite() || args.delay < 1.0 {
+                    1.0
+                } else {
+                    args.delay
+                },
+            ),
             sort_order: args.sort.into(),
             sort_direction: if args.reverse {
                 SortDirection::Ascending
@@ -308,27 +314,27 @@ impl App {
                 self.quotes = batch.quotes;
                 self.failures.clear(); // Clear old failures before new batch
                 self.failures = batch.failures;
-                
+
                 // Track fetch time for each quote (for data freshness display)
                 let now = Instant::now();
                 for quote in &self.quotes {
                     self.quote_fetch_times.insert(quote.symbol.clone(), now);
                 }
-                
+
                 // Cache fresh quotes
                 let quotes_to_cache: Vec<Quote> = self.quotes.clone();
                 for quote in quotes_to_cache {
                     self.cache_quote(quote);
                 }
-                
+
                 self.sort_quotes();
                 self.last_refresh = Some(Instant::now());
                 self.iteration += 1;
                 self.error = None;
-                
+
                 // Check price alerts
                 self.check_alerts();
-                
+
                 if !self.failures.is_empty() {
                     self.set_error(&format!(
                         "Partial data: {} symbol(s) failed",
@@ -431,12 +437,12 @@ impl App {
     /// Assumes viewport height of ~20 rows (terminal typical size).
     fn update_scroll_offset(&mut self) {
         let viewport_height = 20; // Approximate typical terminal height minus header/footer
-        
+
         // If selected is above scroll offset, scroll up
         if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
         }
-        
+
         // If selected is below visible area, scroll down
         if self.selected >= self.scroll_offset + viewport_height {
             self.scroll_offset = self.selected.saturating_sub(viewport_height) + 1;
@@ -607,7 +613,7 @@ impl App {
         let ema26 = self.calculate_ema(prices, 26)?;
 
         let macd_line = ema12 - ema26;
-        
+
         // Signal is 9-period EMA of MACD line history (proper implementation)
         // For simplicity with limited history, we approximate by taking recent MACD values
         // In production, you'd store MACD history and compute EMA(9) of it
@@ -620,16 +626,21 @@ impl App {
 
     /// Helper to calculate MACD signal line approximation.
     /// With limited price history, we approximate by using EMA smoothing factor.
-    fn calculate_macd_signal(&self, _macd_line: &f64, prices: &[f64], signal_period: usize) -> Option<f64> {
+    fn calculate_macd_signal(
+        &self,
+        _macd_line: &f64,
+        prices: &[f64],
+        signal_period: usize,
+    ) -> Option<f64> {
         if prices.len() < 26 {
             return None;
         }
-        
+
         // Calculate recent MACD values for smoothing
         // Use last few prices to build a small MACD series
         let mut macd_values = Vec::new();
         let lookback = 5; // Use last 5 MACD values for signal smoothing
-        
+
         for i in (prices.len() - lookback)..prices.len() {
             if let (Some(ema12), Some(ema26)) = (
                 self.calculate_ema(&prices[0..=i], 12),
@@ -638,18 +649,18 @@ impl App {
                 macd_values.push(ema12 - ema26);
             }
         }
-        
+
         if macd_values.is_empty() {
             return None;
         }
-        
+
         // Simple EMA of MACD values
         let multiplier = 2.0 / (signal_period as f64 + 1.0);
         let mut ema = macd_values[0];
         for macd in &macd_values[1..] {
             ema = (macd - ema) * multiplier + ema;
         }
-        
+
         Some(ema)
     }
 
@@ -775,8 +786,7 @@ impl App {
                 .quotes
                 .iter()
                 .filter(|q| {
-                    q.symbol.to_lowercase().contains(query)
-                        || q.name.to_lowercase().contains(query)
+                    q.symbol.to_lowercase().contains(query) || q.name.to_lowercase().contains(query)
                 })
                 .cloned()
                 .collect();
@@ -821,9 +831,13 @@ impl App {
                         AlertCondition::Equal => (quote.price - target_price).abs() < 0.01,
                     };
                     if triggered {
-                        self.triggered_alerts
-                            .push((quote.symbol.clone(), condition, target_price, quote.price));
-                        
+                        self.triggered_alerts.push((
+                            quote.symbol.clone(),
+                            condition,
+                            target_price,
+                            quote.price,
+                        ));
+
                         // Play audible alert if enabled
                         if self.audio_alerts {
                             crate::audio::play_sound_async(crate::audio::AlertSound::Double);
@@ -841,7 +855,8 @@ impl App {
 
     /// Move to next condition (Above -> Below -> Equal -> Above)
     pub fn alert_next_condition(&mut self) {
-        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone() {
+        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone()
+        {
             let next = (idx + 1) % 3;
             self.alert_setup_mode = Some((symbol, AlertSetupMode::SelectCondition(next)));
         }
@@ -849,7 +864,8 @@ impl App {
 
     /// Move to previous condition
     pub fn alert_prev_condition(&mut self) {
-        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone() {
+        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone()
+        {
             let prev = if idx == 0 { 2 } else { idx - 1 };
             self.alert_setup_mode = Some((symbol, AlertSetupMode::SelectCondition(prev)));
         }
@@ -857,26 +873,37 @@ impl App {
 
     /// Move to price entry
     pub fn alert_enter_price(&mut self) {
-        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone() {
-            let conditions = [AlertCondition::Above, AlertCondition::Below, AlertCondition::Equal];
+        if let Some((symbol, AlertSetupMode::SelectCondition(idx))) = self.alert_setup_mode.clone()
+        {
+            let conditions = [
+                AlertCondition::Above,
+                AlertCondition::Below,
+                AlertCondition::Equal,
+            ];
             let selected = conditions[idx];
-            self.alert_setup_mode = Some((symbol, AlertSetupMode::EnterPrice(selected, String::new())));
+            self.alert_setup_mode =
+                Some((symbol, AlertSetupMode::EnterPrice(selected, String::new())));
         }
     }
 
     /// Add character to price input
     pub fn alert_price_push(&mut self, c: char) {
-        if let Some((symbol, AlertSetupMode::EnterPrice(condition, mut price))) = self.alert_setup_mode.clone() {
+        if let Some((symbol, AlertSetupMode::EnterPrice(condition, mut price))) =
+            self.alert_setup_mode.clone()
+        {
             if c.is_numeric() || (c == '.' && !price.contains('.')) {
                 price.push(c);
-                self.alert_setup_mode = Some((symbol, AlertSetupMode::EnterPrice(condition, price)));
+                self.alert_setup_mode =
+                    Some((symbol, AlertSetupMode::EnterPrice(condition, price)));
             }
         }
     }
 
     /// Remove last character from price input
     pub fn alert_price_pop(&mut self) {
-        if let Some((symbol, AlertSetupMode::EnterPrice(condition, mut price))) = self.alert_setup_mode.clone() {
+        if let Some((symbol, AlertSetupMode::EnterPrice(condition, mut price))) =
+            self.alert_setup_mode.clone()
+        {
             price.pop();
             self.alert_setup_mode = Some((symbol, AlertSetupMode::EnterPrice(condition, price)));
         }
@@ -884,7 +911,9 @@ impl App {
 
     /// Finalize alert setup
     pub fn alert_confirm(&mut self) -> bool {
-        if let Some((symbol, AlertSetupMode::EnterPrice(condition, price_str))) = self.alert_setup_mode.clone() {
+        if let Some((symbol, AlertSetupMode::EnterPrice(condition, price_str))) =
+            self.alert_setup_mode.clone()
+        {
             if let Ok(price) = price_str.parse::<f64>() {
                 self.add_alert(&symbol, condition, price);
                 self.alert_setup_mode = None;
@@ -901,13 +930,15 @@ impl App {
 
     /// Get quotes from cache if available and fresh, else return None
     pub fn get_cached_quote(&self, symbol: &str) -> Option<&Quote> {
-        self.quote_cache.get(symbol).and_then(|(quote, fetch_time)| {
-            if fetch_time.elapsed() < self.cache_duration {
-                Some(quote)
-            } else {
-                None
-            }
-        })
+        self.quote_cache
+            .get(symbol)
+            .and_then(|(quote, fetch_time)| {
+                if fetch_time.elapsed() < self.cache_duration {
+                    Some(quote)
+                } else {
+                    None
+                }
+            })
     }
 
     /// Cache a quote
@@ -919,9 +950,8 @@ impl App {
     /// Clear expired cache entries
     pub fn clean_cache(&mut self) {
         let now = Instant::now();
-        self.quote_cache.retain(|_, (_, fetch_time)| {
-            now.duration_since(*fetch_time) < self.cache_duration
-        });
+        self.quote_cache
+            .retain(|_, (_, fetch_time)| now.duration_since(*fetch_time) < self.cache_duration);
     }
 
     /// Save alerts to configuration for persistence between sessions.
@@ -1055,7 +1085,7 @@ mod tests {
         };
 
         app.sort_quotes();
-        
+
         assert_eq!(app.quotes[0].symbol, "B"); // 2.5%
         assert_eq!(app.quotes[1].symbol, "C"); // 0.0%
         assert_eq!(app.quotes[2].symbol, "A"); // -1.0%
@@ -1075,7 +1105,7 @@ mod tests {
         };
 
         app.sort_quotes();
-        
+
         assert_eq!(app.quotes[0].symbol, "A"); // -1.0%
         assert_eq!(app.quotes[1].symbol, "C"); // 0.0%
         assert_eq!(app.quotes[2].symbol, "B"); // 2.5%
@@ -1095,7 +1125,7 @@ mod tests {
         };
 
         app.sort_quotes();
-        
+
         assert_eq!(app.quotes[0].symbol, "AAPL");
         assert_eq!(app.quotes[1].symbol, "MSFT");
         assert_eq!(app.quotes[2].symbol, "ZZPQ");
@@ -1115,7 +1145,7 @@ mod tests {
         };
 
         app.sort_quotes();
-        
+
         assert_eq!(app.quotes[0].price, 200.0);
         assert_eq!(app.quotes[1].price, 100.0);
         assert_eq!(app.quotes[2].price, 50.0);
@@ -1126,7 +1156,7 @@ mod tests {
         let mut app = App::default();
         let long_error = "x".repeat(150);
         app.set_error(&long_error);
-        
+
         assert!(app.error.is_some());
         let error = app.error.unwrap();
         assert_eq!(error.len(), 100); // 97 chars + 1 for …
@@ -1137,7 +1167,7 @@ mod tests {
     fn test_set_error_short_message() {
         let mut app = App::default();
         app.set_error("Short error");
-        
+
         assert_eq!(app.error, Some("Short error".to_string()));
     }
 

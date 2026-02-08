@@ -40,7 +40,10 @@ pub struct YahooFinanceClient {
 /// Validate that a symbol has acceptable format before API call.
 /// Prevents wasting API quota on junk inputs.
 fn is_valid_symbol(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 10 && s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.' || c == '^')
+    !s.is_empty()
+        && s.len() <= 20
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '^' || c == '=')
 }
 
 impl YahooFinanceClient {
@@ -72,9 +75,25 @@ impl YahooFinanceClient {
             return Ok(QuoteBatch::default());
         }
 
-        // Separate valid and invalid symbols
-        let valid_symbols: Vec<_> = symbols.iter().filter(|s| is_valid_symbol(s)).cloned().collect();
-        let invalid_symbols: Vec<_> = symbols.iter().filter(|s| !is_valid_symbol(s)).cloned().collect();
+        // Validate all symbols up front and warn about invalid ones
+        let valid_symbols: Vec<_> = symbols
+            .iter()
+            .filter(|s| is_valid_symbol(s))
+            .cloned()
+            .collect();
+        let invalid_symbols: Vec<_> = symbols
+            .iter()
+            .filter(|s| !is_valid_symbol(s))
+            .cloned()
+            .collect();
+
+        for sym in &invalid_symbols {
+            eprintln!(
+                "Warning: skipping invalid symbol {:?} \
+                 (must be 1-20 ASCII alphanumeric/-.^= chars)",
+                sym
+            );
+        }
 
         let sem = Arc::new(Semaphore::new(self.max_concurrency));
         let mut futs = FuturesUnordered::new();
@@ -83,17 +102,17 @@ impl YahooFinanceClient {
             let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
             let sym = symbol.clone();
             let client_clone = self.clone();
-            
+
             futs.push(async move {
                 let _permit = permit;
                 let sym_clone = sym.clone();
-                
+
                 // Fetch quote
                 let mut result = match client_clone.fetch_single_quote(&sym).await {
                     Ok(q) => Ok(q),
                     Err(e) => Err(e),
                 };
-                
+
                 // If quote succeeded, try to fetch market cap in parallel (no sequential block)
                 if let Ok(ref mut q) = result {
                     if q.market_cap == Some(0) {
@@ -104,18 +123,20 @@ impl YahooFinanceClient {
                         }
                     }
                 }
-                
+
                 (sym_clone, result)
             });
         }
 
         let mut batch = QuoteBatch::default();
-        
+
         // Add invalid symbols to failures
         for invalid in invalid_symbols {
-            batch.failures.push((invalid, "Invalid symbol format".to_string()));
+            batch
+                .failures
+                .push((invalid, "Invalid symbol format".to_string()));
         }
-        
+
         // Process valid symbol responses - no sequential blocking
         while let Some((sym, res)) = futs.next().await {
             match res {
@@ -282,7 +303,7 @@ impl ChartResult {
             year_high: meta.fifty_two_week_high.unwrap_or(0.0),
             year_low: meta.fifty_two_week_low.unwrap_or(0.0),
             volume: meta.regular_market_volume.unwrap_or(0),
-            avg_volume: 0, // Not available in chart API meta
+            avg_volume: 0,       // Not available in chart API meta
             market_cap: Some(0), // Not available in chart API meta; display shows 0 instead of blank
             currency: meta.currency.unwrap_or_else(|| "USD".to_string()),
             exchange: meta.exchange_name.unwrap_or_default(),
@@ -371,23 +392,13 @@ struct FmpProfile {
 /// Falls back gracefully if unavailable
 pub async fn fetch_market_cap(client: &Client, symbol: &str) -> Option<u64> {
     let api_key = get_fmp_api_key();
-    let url = format!(
-        "{}/{}?apikey={}",
-        FMP_API_URL, symbol, api_key
-    );
+    let url = format!("{}/{}?apikey={}", FMP_API_URL, symbol, api_key);
 
-    match tokio::time::timeout(
-        Duration::from_secs(5),
-        client.get(&url).send(),
-    )
-    .await
-    {
-        Ok(Ok(response)) => {
-            match response.json::<FmpProfile>().await {
-                Ok(profile) => profile.market_cap,
-                Err(_) => None,
-            }
-        }
+    match tokio::time::timeout(Duration::from_secs(5), client.get(&url).send()).await {
+        Ok(Ok(response)) => match response.json::<FmpProfile>().await {
+            Ok(profile) => profile.market_cap,
+            Err(_) => None,
+        },
         _ => None,
     }
 }
@@ -421,14 +432,33 @@ mod tests {
         assert!(is_valid_symbol("ETH.X"));
         assert!(is_valid_symbol("^VIX"));
         assert!(is_valid_symbol("GOOGL"));
+        // Berkshire Hathaway class B
+        assert!(is_valid_symbol("BRK-B"));
+        // S&P 500 index
+        assert!(is_valid_symbol("^GSPC"));
+        // FX pairs with = (e.g. EURUSD=X)
+        assert!(is_valid_symbol("EURUSD=X"));
+        // Futures with = (e.g. ES=F)
+        assert!(is_valid_symbol("ES=F"));
     }
 
     #[test]
     fn test_is_valid_symbol_invalid() {
-        assert!(!is_valid_symbol("")); // Empty
-        assert!(!is_valid_symbol("AAAABBBBCCDD")); // Too long (>10)
-        assert!(!is_valid_symbol("AAPL GOOGL")); // Spaces
-        assert!(!is_valid_symbol("AAPL\n")); // Newline
-        assert!(!is_valid_symbol("AAA@BBB")); // Invalid character
+        // Empty string
+        assert!(!is_valid_symbol(""));
+        // Too long (>20 chars)
+        assert!(!is_valid_symbol("AAAAABBBBBCCCCCDDDDDE"));
+        // Spaces
+        assert!(!is_valid_symbol("AAPL GOOGL"));
+        // Newline
+        assert!(!is_valid_symbol("AAPL\n"));
+        // Invalid characters
+        assert!(!is_valid_symbol("AAA@BBB"));
+        assert!(!is_valid_symbol("AAPL/GOOGL"));
+        assert!(!is_valid_symbol("AAPL?"));
+        assert!(!is_valid_symbol("AAPL%20"));
+        // Injection-like inputs
+        assert!(!is_valid_symbol("'; DROP TABLE--"));
+        assert!(!is_valid_symbol("<script>alert(1)</script>"));
     }
 }
