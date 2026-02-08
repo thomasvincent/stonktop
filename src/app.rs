@@ -86,8 +86,12 @@ impl App {
 
         let client = YahooFinanceClient::new(args.timeout)?;
 
-        // Enforce minimum refresh interval of 1.0 second
-        let delay = if args.delay < 1.0 { 1.0 } else { args.delay };
+        // Enforce minimum refresh interval of 1.0 second; reject NaN/infinity
+        let delay = if !args.delay.is_finite() || args.delay < 1.0 {
+            1.0
+        } else {
+            args.delay
+        };
 
         Ok(Self {
             quotes: Vec::new(),

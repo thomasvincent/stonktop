@@ -23,7 +23,7 @@ fn is_valid_symbol(symbol: &str) -> bool {
         && symbol.len() <= 20
         && symbol
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '^')
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '^' || c == '=')
 }
 
 /// Yahoo Finance API client.
@@ -63,8 +63,28 @@ impl YahooFinanceClient {
 
         let results = join_all(futures).await;
 
-        // Collect successful results, skip failures
-        let quotes: Vec<Quote> = results.into_iter().filter_map(|r| r.ok()).collect();
+        // Collect successful results, log warnings for failures
+        let mut quotes = Vec::new();
+        let mut errors = Vec::new();
+
+        for (i, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(quote) => quotes.push(quote),
+                Err(e) => {
+                    let symbol = &symbols[i];
+                    let msg = format!("{}: {}", symbol, e);
+                    eprintln!("Warning: failed to fetch {}", msg);
+                    errors.push(msg);
+                }
+            }
+        }
+
+        if quotes.is_empty() && !errors.is_empty() {
+            anyhow::bail!(
+                "Failed to fetch any quotes. Errors:\n  {}",
+                errors.join("\n  ")
+            );
+        }
 
         Ok(quotes)
     }
@@ -317,6 +337,14 @@ mod tests {
         assert!(is_valid_symbol("^GSPC"));
         assert!(is_valid_symbol("^DJI"));
         assert!(is_valid_symbol("^IXIC"));
+    }
+
+    #[test]
+    fn test_valid_symbol_with_equals() {
+        assert!(is_valid_symbol("EURUSD=X")); // FX pairs
+        assert!(is_valid_symbol("ES=F")); // Futures
+        assert!(is_valid_symbol("GC=F")); // Gold futures
+        assert!(is_valid_symbol("NQ=F")); // Nasdaq futures
     }
 
     #[test]
