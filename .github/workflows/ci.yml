@@ -72,16 +72,16 @@ jobs:
 
   # Verify MSRV (Minimum Supported Rust Version)
   msrv:
-    name: Check MSRV (1.86)
+    name: Check MSRV (1.88)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust 1.86
+      - name: Install Rust 1.88
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.86"
+          toolchain: "1.88"
 
       - name: Check compilation
         run: cargo check --verbose
